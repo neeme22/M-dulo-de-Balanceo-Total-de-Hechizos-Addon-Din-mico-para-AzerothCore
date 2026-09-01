@@ -1,10 +1,12 @@
-# Módulo de Balanceo Total de Hechizos + Addon Dinámico
+# Total Spell Balancing Module + Dynamic Addon
 
-### Para AzerothCore 3.3.5a
+### For AzerothCore 3.3.5a
 
-**Rebalancea cualquier hechizo del juego desde una tabla de la base de datos — y que el jugador vea los números reales en su tooltip, sin repartirle un solo parche.**
+*[Léeme en español](README.es.md)*
 
-Cambias un número, escribes `.reload spell_regulator` y ya está: sin recompilar, sin reiniciar el servidor y sin tocar los DBC del cliente.
+**Rebalance any spell in the game from a single database table — and let players see the real numbers in their tooltips, without shipping them a single patch.**
+
+Change a number, type `.reload spell_regulator`, and that's it: no recompiling, no server restart, and no touching the client's DBC files.
 
 ```sql
 UPDATE spellregulator SET percentage = 60 WHERE spellId = 133;
@@ -13,137 +15,136 @@ UPDATE spellregulator SET percentage = 60 WHERE spellId = 133;
 .reload spell_regulator
 ```
 
-Bola de Fuego pega ahora un 60%. Y el tooltip de todos tus jugadores lo dice.
+Fireball now hits for 60%. And every one of your players' tooltips says so.
 
 ---
 
-## El problema que resuelve
+## The problem it solves
 
-Rebalancear un servidor privado siempre ha tenido el mismo cuello de botella: puedes cambiar el daño en el servidor, pero el cliente sigue leyendo su `Spell.dbc` y enseñando el número viejo. El jugador lee 564 y recibe 282, y no entiende nada.
+Rebalancing a private server has always hit the same wall: you can change the damage on the server, but the client keeps reading its own `Spell.dbc` and showing the old number. The player reads 564, takes 282, and has no idea what happened.
 
-La salida clásica es editar los DBC y repartir un parche nuevo cada vez que ajustas algo. Aquí no: el servidor le manda al addon lo que ha cambiado y el tooltip se reescribe solo, en caliente.
+The usual way out is editing the DBCs and shipping a new patch every time you tweak something. Not here: the server tells the addon what changed and the tooltip rewrites itself, live.
 
 ---
 
-## Qué hace
+## What it does
 
-| Ajuste | Columna | Alcance |
+| Adjustment | Column | Scope |
 |---|---|---|
-| Daño directo | `percentage` | hechizos de jugadores y criaturas |
-| Daño periódico (DoT) | `percentage` | cada tick |
-| Curación directa y periódica | `percentage` | incluye HoT |
-| Valor de auras | `percentage` | buffs de estadísticas, escudos de absorción |
-| **Coste de poder** | **`power_pct`** | **maná, ira, energía, runas, foco** |
+| Direct damage | `percentage` | player and creature spells |
+| Periodic damage (DoT) | `percentage` | every tick |
+| Direct and periodic healing | `percentage` | HoTs included |
+| Aura amounts | `percentage` | stat buffs, absorption shields |
+| **Power cost** | **`power_pct`** | **mana, rage, energy, runes, focus** |
 
-Y además, ajuste **por criatura concreta**: el mismo hechizo puede pegar distinto según qué NPC lo lance.
+Plus **per-creature** adjustment: the same spell can hit for different amounts depending on which NPC casts it.
 
-En todas las columnas: `100` = sin cambios, `50` = la mitad, `200` = el doble. En `power_pct`, `0` deja el hechizo gratuito.
+In every column: `100` = unchanged, `50` = half, `200` = double. In `power_pct`, `0` makes the spell free.
 
 ---
 
-## Ejemplo
+## Example
 
 ```sql
 INSERT INTO spellregulator (spellId, percentage, power_pct, comment) VALUES
-  (133,  50, 100, 'Bola de Fuego: mitad de daño, coste normal'),
-  (585, 100,  50, 'Descarga: daño normal, mitad de maná'),
-  (100,  75,   0, 'Carga: 75% de daño y sin coste de ira');
+  (133,  50, 100, 'Fireball: half damage, normal cost'),
+  (585, 100,  50, 'Smite: normal damage, half mana'),
+  (100,  75,   0, 'Charge: 75% damage and no rage cost');
 ```
 
 ```
 .reload spell_regulator
 ```
 
-Para que un jefe concreto pegue más fuerte con Bola de Fuego sin tocar a los magos:
+To make one specific boss hit harder with Fireball without touching mages:
 
 ```sql
 INSERT INTO npc_spell_amplification (creature_entry, spell_id, amplification)
 VALUES (12435, 133, 300);
 ```
 
-La tabla por NPC **tiene prioridad** sobre la global. Si un NPC no tiene fila propia, hereda el porcentaje global.
+The per-NPC table **takes priority** over the global one. An NPC with no row of its own inherits the global percentage.
 
 ---
 
-## El addon del cliente
+## The client addon
 
-El servidor puede reducir un hechizo al 50%, pero el cliente sigue leyendo su `Spell.dbc` y enseñando el número viejo en la descripción. El jugador ve 564 y recibe 282.
+The server can cut a spell to 50%, but the client keeps reading its `Spell.dbc` and showing the old number in the description. The player sees 564 and takes 282.
 
-`client-addon/SpellRegTooltip` corrige eso. Reescribe los números del tooltip con los valores reales, en el libro de hechizos, la barra de acciones, las auras y la barra de formas.
+`client-addon/SpellRegTooltip` fixes that. It rewrites the tooltip numbers with the real values — in the spellbook, the action bar, the aura bar and the shapeshift bar.
 
-Hace **dos pasadas independientes**, igual que las dos columnas de la tabla: una sobre los números de la descripción (`percentage`) y otra sobre la línea del coste (`power_pct`). Puedes tocar solo el maná y dejar el daño intacto, y el tooltip lo refleja.
+It makes **two independent passes**, mirroring the two columns of the table: one over the description numbers (`percentage`) and one over the cost line (`power_pct`). You can touch only the mana and leave the damage alone, and the tooltip reflects it.
 
-No toca ningún DBC. El servidor le envía las dos tablas por AIO al entrar y cada vez que cambian, así que un `.reload spell_regulator` se refleja solo.
+It touches no DBC. The server sends both tables over AIO on login and whenever they change, so a `.reload spell_regulator` shows up on its own.
 
+### What the addon cannot know
 
-### Lo que el addon no puede saber
+The number it shows is *DBC value × table percentage*: a prediction, not a reading of the applied aura.
 
-El número que muestra es *valor del DBC × porcentaje de la tabla*: una predicción, no una lectura del aura aplicada.
+It comes out the same for everyone running the addon, because it does not depend on who cast the spell. But for that very reason, if the caster has talents or gear that improve the effect, you will see the regulated base rather than their real, improved value.
 
-Sale igual para todos los que tengan el addon, porque no depende de quién lanzó el hechizo. Pero por esa misma razón, si el lanzador tiene talentos o equipo que mejoran el efecto, verás la base regulada y no su valor real mejorado.
-
-No es un fallo del addon: en 3.3.5 el servidor no le manda al cliente la cantidad real de cada efecto de aura, así que el WoW original tiene exactamente la misma limitación.
+This is not an addon bug: on 3.3.5 the server never sends the client the real amount of each aura effect, so vanilla WoW has exactly the same limitation.
 
 ---
 
-## Instalación
+## Installation
 
-**1. El módulo**
+**1. The module**
 
 ```bash
 cd azerothcore/modules
 git clone https://github.com/neeme22/M-dulo-de-Balanceo-Total-de-Hechizos-Addon-Din-mico-para-AzerothCore.git mod-spellregulator
 ```
 
-> La carpeta **tiene que llamarse** `mod-spellregulator`: las rutas de los `#include` del core apuntan ahí.
+> The folder **must be named** `mod-spellregulator`: the core's `#include` paths point there.
 
-**3. La base de datos**
+**2. The database**
 
-Instalación nueva:
+Fresh install:
 ```
 data/sql/db-world/spellregulator.sql
 data/sql/db-world/npc_spell_amplification.sql
 ```
 
-¿Ya tenías el módulo de antes? Solo esto, que añade la columna del coste sin tocar tus filas:
+Already had an older version? Just this one, which adds the cost column without touching your rows:
 ```
 data/sql/db-world/updates/2026_09_01_00_power_pct.sql
 ```
 
-**4. Compila** y ejecuta cmake de nuevo.
+**3. Re-run cmake** and build.
 
-**5. El addon** (opcional): copia `client-addon/SpellRegTooltip` a `Interface/AddOns` y `lua/spellregulator_tooltip_server.lua` a tu carpeta de Eluna. Necesita AIO.
-
----
-
-## Cómo funciona
-
-Dos `unordered_map` en memoria, cargados al arrancar y en cada `.reload`. El lookup del coste solo guarda las filas que cambian algo, así que los hechizos sin regular no pagan nada por el paso extra.
-
-El ajuste de coste se aplica en `SpellInfo::CalcPowerCost`, que es el punto único por el que pasan todos los cálculos: el gasto real al lanzar, el que mira la IA de las mascotas para decidir si puede permitirse el hechizo y el que usan los scripts de criatura. Ningún camino se queda fuera.
+**4. The addon** (optional): copy `client-addon/SpellRegTooltip` into `Interface/AddOns` and `lua/spellregulator_tooltip_server.lua` into your Eluna folder. Requires AIO.
 
 ---
 
-### Idiomas
+## How it works
 
-Probado en **esES** y **enUS**. El addon no depende de un idioma concreto: identifica el hechizo con `GetSpellLink` sobre el nombre que el propio cliente muestra, y el escalado de números es aritmético. Reconoce el separador de miles que use el cliente (`1.234` o `1,234`) y lo devuelve igual.
+Two `unordered_map`s held in memory, loaded at startup and on every `.reload`. The cost lookup only stores rows that actually change something, so unregulated spells pay nothing for the extra step.
 
-Las palabras que sirven para clasificar líneas —coste, alcance, tiempo de lanzamiento, duración— están en las dos lenguas. Para otro idioma basta añadir sus términos a `META`, `UNIDADES` y `ANTES_MALO`, arriba del fichero del addon.
-
----
-
-## Requisitos
-
-- AzerothCore (rama `master`)
-- MySQL 5.7 o superior
-- Para el addon: Eluna con AIO, y cliente 3.3.5a
+The cost adjustment is applied in `SpellInfo::CalcPowerCost`, the single choke point every calculation goes through: the real spend on cast, the one pet AI checks to decide whether it can afford the spell, and the one creature scripts use. No path is left out.
 
 ---
 
-## Autor
+### Languages
+
+Tested on **esES** and **enUS**. The addon does not depend on any particular language: it identifies the spell with `GetSpellLink` using the name the client itself displays, and the number scaling is pure arithmetic. It recognises whichever thousands separator the client uses (`1.234` or `1,234`) and writes it back the same way.
+
+The words used to classify lines — cost, range, cast time, duration — are present in both languages. For another language, add its terms to `META`, `UNIDADES` and `ANTES_MALO` at the top of the addon file.
+
+---
+
+## Requirements
+
+- AzerothCore (`master` branch)
+- MySQL 5.7 or newer
+- For the addon: Eluna with AIO, and a 3.3.5a client
+
+---
+
+## Author
 
 **neeme22**
 
-Reescritura y ampliación sobre la idea original de [mod-spell-regulator](https://github.com/azerothcore/mod-spell-regulator) de ViperDev. Publicado bajo GPL-3, igual que el original.
+A rewrite and extension of the original idea behind [mod-spell-regulator](https://github.com/azerothcore/mod-spell-regulator) by ViperDev. Released under GPL-3, same as the original.
 
-Añadido en esta versión: regulación del coste de poder, ajuste por criatura, enganche en curación y en el valor de auras, columna de comentarios, SQL no destructivo y el addon de tooltips para el cliente.
+Added in this version: power cost regulation, per-creature adjustment, hooks into healing and aura amounts, a comment column, non-destructive SQL, and the client-side tooltip addon.

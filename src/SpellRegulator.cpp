@@ -1,7 +1,7 @@
 /*
  * Spell Regulator - regulacion de hechizos para AzerothCore
  *
- * Copyright (C) 2026 pelianzaba
+ * Copyright (C) 2026 neeme
  *
  * Este programa es software libre: puedes redistribuirlo y/o modificarlo
  * bajo los terminos de la Licencia Publica General GNU version 3, tal y
