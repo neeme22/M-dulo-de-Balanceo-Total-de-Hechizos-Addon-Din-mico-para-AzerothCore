@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: SpellReg Tooltip
+## Notes: Aplica a la descripcion del tooltip el porcentaje que mod-spellregulator usa en el servidor.
+## Author: -
+## Version: 1.0
+## Dependencies: AIO_Client
+## SavedVariables: SpellRegTooltipDB
+
+SpellRegTooltip.lua
