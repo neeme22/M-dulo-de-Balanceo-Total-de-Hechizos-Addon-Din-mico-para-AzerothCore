@@ -52,12 +52,25 @@ El servidor puede reducir un hechizo al 50%, pero el cliente sigue leyendo su `S
 
 `client-addon/SpellRegTooltip` corrige eso. Reescribe los números del tooltip con los valores reales, en el libro de hechizos, la barra de acciones, las auras y la barra de formas.
 
-No toca ningún DBC. El servidor le envía la tabla por AIO al entrar y cada vez que cambia, así que un `.reload spell_regulator` se refleja solo.
+Hace **dos pasadas independientes**, igual que las dos columnas de la tabla: una sobre los números de la descripción (`percentage`) y otra sobre la línea del coste (`power_pct`). Puedes tocar solo el maná y dejar el daño intacto, y el tooltip lo refleja.
+
+No toca ningún DBC. El servidor le envía las dos tablas por AIO al entrar y cada vez que cambian, así que un `.reload spell_regulator` se refleja solo.
 
 ```
-/spellreg          ver estado
-/spellreg debug    ver qué líneas está tocando
+/spellreg                    ver estado
+/spellreg debug              ver qué líneas está tocando
+/spellreg set  <id> <pct>    probar un % de daño en local
+/spellreg cost <id> <pct>    probar un % de coste en local
+/spellreg clear              borrar las pruebas locales
 ```
+
+### Lo que el addon no puede saber
+
+El número que muestra es *valor del DBC × porcentaje de la tabla*: una predicción, no una lectura del aura aplicada.
+
+Sale igual para todos los que tengan el addon, porque no depende de quién lanzó el hechizo. Pero por esa misma razón, si el lanzador tiene talentos o equipo que mejoran el efecto, verás la base regulada y no su valor real mejorado.
+
+No es un fallo del addon: en 3.3.5 el servidor no le manda al cliente la cantidad real de cada efecto de aura, así que el WoW original tiene exactamente la misma limitación.
 
 ---
 

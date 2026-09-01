@@ -16,8 +16,10 @@ local NOMBRE = "SpellReg"
 
 SpellRegTooltipDB = SpellRegTooltipDB or {}
 
-local PCT = {}          -- [spellId] = porcentaje (lo que manda el servidor)
+local PCT = {}          -- [spellId] = % de dano/curacion (lo que manda el servidor)
+local PCT_COSTE = {}    -- [spellId] = % del coste de poder (mana, ira, energia...)
 local MANUAL = {}       -- pruebas locales, tienen prioridad
+local MANUAL_COSTE = {}
 
 local function Msg(t)
     DEFAULT_CHAT_FRAME:AddMessage("|cffffff88" .. NOMBRE .. "|r " .. t)
@@ -27,6 +29,12 @@ local function PorcentajeDe(spellId)
     local p = MANUAL[spellId]
     if p then return p end
     return PCT[spellId] or PCT[tostring(spellId)]
+end
+
+local function PorcentajeCosteDe(spellId)
+    local p = MANUAL_COSTE[spellId]
+    if p then return p end
+    return PCT_COSTE[spellId] or PCT_COSTE[tostring(spellId)]
 end
 
 ----------------------------------------------------------------- numeros
@@ -280,11 +288,7 @@ local function IdPorNombre(tt)
     return id and tonumber(id) or nil
 end
 
-local function Retocar(tt, spellId)
-    if not spellId then
-        spellId = IdPorNombre(tt)
-    end
-    if not spellId then return end
+local function RetocarValor(tt, spellId)
     local pct = PorcentajeDe(spellId)
     if not pct or pct == 100 then
         if DEPURAR then Msg("hechizo " .. tostring(spellId) .. ": sin regular") end
@@ -323,6 +327,68 @@ local function Retocar(tt, spellId)
     if DEPURAR then
         Msg("hechizo " .. tostring(spellId) .. ": ninguna linea tenia un valor escalable")
     end
+end
+
+-- Lineas del coste de poder. Van aparte de RetocarValor porque el regulador
+-- las trata como dos ajustes independientes: puedes dejar el dano intacto y
+-- tocar solo el mana. Ademas RetocarValor para en la primera linea que cambia,
+-- asi que nunca llegaria hasta aqui.
+local COSTE = {
+    "de man", "de energ", "de rabia", "de ira", "de runa",
+    "de poder r", "de concentraci", "de foco",
+    "Mana", "Energy", "Rage", "Runic Power", "Focus",
+}
+
+local LADOS = { "TextLeft", "TextRight" }
+
+local function EsCoste(t)
+    for i = 1, #COSTE do
+        if string.find(t, COSTE[i]) then return true end
+    end
+    return false
+end
+
+local function RetocarCoste(tt, spellId)
+    local pct = PorcentajeCosteDe(spellId)
+    if not pct or pct == 100 then return end
+
+    local nombre = tt:GetName()
+    if not nombre then return end
+
+    for i = 1, tt:NumLines() do
+        for l = 1, #LADOS do
+            local fs = _G[nombre .. LADOS[l] .. i]
+            local t  = fs and fs:GetText()
+            if t and t ~= "" and string.find(t, "%d") and EsCoste(t) then
+                -- ya aplicado a este mismo tooltip: la barra de accion lo
+                -- reconstruye cada pocas decimas y lo escalaria en bucle
+                if tt.__srCosteId == spellId and t == tt.__srCosteOut then return end
+
+                local nuevo, tocados = EscalarTexto(t, pct)
+                if tocados > 0 then
+                    fs:SetText(nuevo)
+                    tt.__srCosteId, tt.__srCosteOut = spellId, nuevo
+                    if DEPURAR then
+                        Msg("hechizo " .. tostring(spellId) .. ": coste al "
+                            .. tostring(pct) .. "%, linea " .. i .. " " .. LADOS[l])
+                    end
+                    tt:AddLine("Regulador: " .. tostring(pct) .. "% del coste", 0.4, 1, 0.4)
+                    tt:Show()
+                    return
+                end
+            end
+        end
+    end
+end
+
+-- Punto de entrada unico: resuelve el id una vez y hace las dos pasadas.
+local function Retocar(tt, spellId)
+    if not spellId then
+        spellId = IdPorNombre(tt)
+    end
+    if not spellId then return end
+    RetocarValor(tt, spellId)
+    RetocarCoste(tt, spellId)
 end
 
 local function IdDeLink(link)
@@ -467,11 +533,16 @@ local function ConectarAIO()
         return false
     end
     local H = AIO.AddHandlers(NOMBRE, {})
-    function H.Set(_, tabla)
+    function H.Set(_, tabla, tablaCoste)
         PCT = tabla or {}
-        local n = 0
+        PCT_COSTE = tablaCoste or {}
+        local n, c = 0, 0
         for _ in pairs(PCT) do n = n + 1 end
-        if DEPURAR then Msg("recibidos " .. n .. " hechizos del servidor") end
+        for _ in pairs(PCT_COSTE) do c = c + 1 end
+        if DEPURAR then
+            Msg("recibidos del servidor: " .. n .. " hechizos regulados, "
+                .. c .. " con el coste tocado")
+        end
     end
     return true
 end
@@ -487,8 +558,12 @@ SlashCmdList["SPELLREG"] = function(txt)
         MANUAL[tonumber(a)] = tonumber(b)
         Msg("prueba local: hechizo " .. a .. " al " .. b .. "%")
         return
+    elseif cmd == "cost" and a ~= "" and b ~= "" then
+        MANUAL_COSTE[tonumber(a)] = tonumber(b)
+        Msg("prueba local: coste del hechizo " .. a .. " al " .. b .. "%")
+        return
     elseif cmd == "clear" then
-        MANUAL = {}
+        MANUAL, MANUAL_COSTE = {}, {}
         Msg("pruebas locales borradas")
         return
     elseif cmd == "debug" then

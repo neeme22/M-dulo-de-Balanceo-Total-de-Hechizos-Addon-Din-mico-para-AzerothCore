@@ -4,7 +4,9 @@
   Manda a los clientes el porcentaje que mod-spellregulator aplica a cada
   hechizo, para que el addon pueda reescribir la descripcion del tooltip.
 
-  Solo se envia la tabla GLOBAL (`spellregulator`). Los overrides por NPC
+  Se envian las dos columnas de la tabla GLOBAL (`spellregulator`):
+  `percentage` (dano/curacion) y `power_pct` (coste de poder).
+  Los overrides por NPC
   (`npc_spell_amplification`) no se mandan a proposito: son hechizos de
   criatura, de los que el jugador nunca ve el tooltip.
 
@@ -18,28 +20,38 @@ local INTERVALO_MS = 5000   -- cada cuanto se mira si la tabla cambio
 
 local Handlers = AIO.AddHandlers("SpellReg", {})
 
-local cache  = {}   -- [spellId] = porcentaje
-local firma  = nil  -- huella de la tabla, para detectar cambios
+local cache      = {}   -- [spellId] = % de dano/curacion
+local cacheCoste = {}   -- [spellId] = % del coste de poder
+local firma      = nil  -- huella de las dos tablas, para detectar cambios
 
 local function LeerTabla()
-    local t, trozos = {}, {}
+    local t, tc, trozos = {}, {}, {}
+    -- Se piden las filas donde cambie ALGO: una fila puede dejar el dano
+    -- intacto y tocar solo el mana, o al reves.
     local q = WorldDBQuery(
-        "SELECT spellId, percentage FROM spellregulator " ..
-        "WHERE percentage <> 100 AND percentage <> 0 ORDER BY spellId")
+        "SELECT spellId, percentage, power_pct FROM spellregulator " ..
+        "WHERE (percentage <> 100 AND percentage <> 0) OR power_pct <> 100 " ..
+        "ORDER BY spellId")
     if q then
         repeat
-            local id  = q:GetUInt32(0)
-            local pct = q:GetFloat(1)
-            t[id] = pct
-            trozos[#trozos + 1] = id .. "=" .. pct
+            local id    = q:GetUInt32(0)
+            local pct   = q:GetFloat(1)
+            local coste = q:GetFloat(2)
+            if pct ~= 100 and pct ~= 0 then
+                t[id] = pct
+            end
+            if coste ~= 100 then
+                tc[id] = coste
+            end
+            trozos[#trozos + 1] = id .. "=" .. pct .. "/" .. coste
         until not q:NextRow()
     end
-    return t, table.concat(trozos, ",")
+    return t, tc, table.concat(trozos, ",")
 end
 
 local function Enviar(player)
     if player then
-        AIO.Handle(player, "SpellReg", "Set", cache)
+        AIO.Handle(player, "SpellReg", "Set", cache, cacheCoste)
     end
 end
 
@@ -59,10 +71,10 @@ end
 -- Vigila la tabla. Asi se entera igual de un `.reload spell_regulator`
 -- que de una edicion directa en la base de datos.
 local function Vigilar()
-    local t, f = LeerTabla()
+    local t, tc, f = LeerTabla()
     if f ~= firma then
         local primera = (firma == nil)
-        firma, cache = f, t
+        firma, cache, cacheCoste = f, t, tc
         if not primera then
             EnviarATodos()
         end
