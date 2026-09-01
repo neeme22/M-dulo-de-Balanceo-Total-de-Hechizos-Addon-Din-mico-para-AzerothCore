@@ -1,8 +1,27 @@
-# Spell Regulator
+# Módulo de Balanceo Total de Hechizos + Addon Dinámico
 
-**Ajusta el daño, la curación y el coste de cualquier hechizo de AzerothCore desde la base de datos, sin tocar los DBC del cliente.**
+### Para AzerothCore 3.3.5a
 
-Cambias un número en una tabla, escribes `.reload spell_regulator` y el efecto es inmediato: sin recompilar, sin reiniciar y sin repartir parches a los jugadores.
+**Rebalancea cualquier hechizo del juego desde una tabla de la base de datos — y que el jugador vea los números reales en su tooltip, sin repartirle un solo parche.**
+
+Cambias un número, escribes `.reload spell_regulator` y ya está: sin recompilar, sin reiniciar el servidor y sin tocar los DBC del cliente.
+
+```sql
+UPDATE spellregulator SET percentage = 60 WHERE spellId = 133;
+```
+```
+.reload spell_regulator
+```
+
+Bola de Fuego pega ahora un 60%. Y el tooltip de todos tus jugadores lo dice.
+
+---
+
+## El problema que resuelve
+
+Rebalancear un servidor privado siempre ha tenido el mismo cuello de botella: puedes cambiar el daño en el servidor, pero el cliente sigue leyendo su `Spell.dbc` y enseñando el número viejo. El jugador lee 564 y recibe 282, y no entiende nada.
+
+La salida clásica es editar los DBC y repartir un parche nuevo cada vez que ajustas algo. Aquí no: el servidor le manda al addon lo que ha cambiado y el tooltip se reescribe solo, en caliente.
 
 ---
 
@@ -80,8 +99,10 @@ No es un fallo del addon: en 3.3.5 el servidor no le manda al cliente la cantida
 
 ```bash
 cd azerothcore/modules
-git clone <este-repo> mod-spellregulator
+git clone https://github.com/neeme22/M-dulo-de-Balanceo-Total-de-Hechizos-Addon-Din-mico-para-AzerothCore.git mod-spellregulator
 ```
+
+> La carpeta **tiene que llamarse** `mod-spellregulator`: las rutas de los `#include` del core apuntan ahí.
 
 **2. Los enganches al core**
 
@@ -185,7 +206,7 @@ El ajuste de coste se aplica en `SpellInfo::CalcPowerCost`, que es el punto úni
 
 ## Autor
 
-**pelianzaba**
+**neeme22**
 
 Reescritura y ampliación sobre la idea original de [mod-spell-regulator](https://github.com/azerothcore/mod-spell-regulator) de ViperDev. Publicado bajo GPL-3, igual que el original.
 
