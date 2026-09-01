@@ -75,13 +75,6 @@ Hace **dos pasadas independientes**, igual que las dos columnas de la tabla: una
 
 No toca ningún DBC. El servidor le envía las dos tablas por AIO al entrar y cada vez que cambian, así que un `.reload spell_regulator` se refleja solo.
 
-```
-/spellreg                    ver estado
-/spellreg debug              ver qué líneas está tocando
-/spellreg set  <id> <pct>    probar un % de daño en local
-/spellreg cost <id> <pct>    probar un % de coste en local
-/spellreg clear              borrar las pruebas locales
-```
 
 ### Lo que el addon no puede saber
 
