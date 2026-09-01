@@ -124,6 +124,14 @@ El ajuste de coste se aplica en `SpellInfo::CalcPowerCost`, que es el punto úni
 
 ---
 
+### Idiomas
+
+Probado en **esES** y **enUS**. El addon no depende de un idioma concreto: identifica el hechizo con `GetSpellLink` sobre el nombre que el propio cliente muestra, y el escalado de números es aritmético. Reconoce el separador de miles que use el cliente (`1.234` o `1,234`) y lo devuelve igual.
+
+Las palabras que sirven para clasificar líneas —coste, alcance, tiempo de lanzamiento, duración— están en las dos lenguas. Para otro idioma basta añadir sus términos a `META`, `UNIDADES` y `ANTES_MALO`, arriba del fichero del addon.
+
+---
+
 ## Requisitos
 
 - AzerothCore (rama `master`)

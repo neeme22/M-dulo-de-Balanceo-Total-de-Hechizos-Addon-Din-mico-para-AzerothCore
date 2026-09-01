@@ -44,6 +44,7 @@ local UNIDADES = {
     ["segundo"] = true, ["segundos"] = true,
     ["min"] = true, ["mins"] = true, ["minuto"] = true, ["minutos"] = true,
     ["hora"] = true, ["horas"] = true,
+    ["hour"] = true, ["hours"] = true, ["hr"] = true, ["hrs"] = true,
     ["sec"] = true, ["secs"] = true, ["second"] = true, ["seconds"] = true,
     ["m"] = true, ["yd"] = true, ["yards"] = true, ["metros"] = true,
 }
@@ -225,10 +226,14 @@ end
 ----------------------------------------------------------------- tooltip
 
 local META = {
+    -- coste, en los dos idiomas. Las inglesas son imprescindibles: sin ellas,
+    -- en un cliente enUS la linea "40 Mana" no se reconoce como meta, se cuela
+    -- como candidata normal y la pasada del dano se la puede comer.
     "de man", "de energ", "de rabia", "de runa", "de concentraci",
+    "Mana", "Energy", "Rage", "Runic Power", "Focus",
     "Reutilizaci", "recarga", "cooldown",
     "de alcance", "yd range", "Alcance",
-    "lanzamiento", "cast time", "Canalizado",
+    "lanzamiento", "cast time", "Canalizado", "Channeled", "Instant",
     "Requiere", "Requires", "Necesita",
     "Spell ID", "SpellID", "Item ID", "ItemID",
 }
