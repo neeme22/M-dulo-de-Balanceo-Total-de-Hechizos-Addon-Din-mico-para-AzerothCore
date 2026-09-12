@@ -12,20 +12,36 @@
 
   Se salta las filas con 100 y con 0, porque el modulo trata las dos como
   "sin cambios" (mira LookupPercent/Regulate en SpellRegulator.h).
+
+  CUANDO SE RELEE LA TABLA
+  Antes se sondeaba la base de datos cada 5 s para siempre. Ahora se relee
+  solo cuando alguien recarga el modulo de verdad, escuchando el comando
+  (evento 42). Asi el cliente se entera exactamente cuando se entera el C++,
+  y no hay un SELECT en el hilo del mundo cada 5 segundos.
+
+  Comandos que recargan la tabla en el core (cs_reload.cpp):
+      .reload spell_regulator      -> HandleReloadSpellRegulator
+      .reload all spell            -> HandleReloadAllSpellCommand
+      .reload all                  -> HandleReloadAllCommand
 ----------------------------------------------------------------------------]]
 
 local AIO = AIO or require("AIO")
-
-local INTERVALO_MS = 5000   -- cada cuanto se mira si la tabla cambio
 
 local Handlers = AIO.AddHandlers("SpellReg", {})
 
 local cache      = {}   -- [spellId] = % de dano/curacion
 local cacheCoste = {}   -- [spellId] = % del coste de poder
-local firma      = nil  -- huella de las dos tablas, para detectar cambios
+local firma      = nil  -- huella de la tabla, para no reenviar sin cambios
 
+----------------------------------------------------------------- lectura
+
+-- Devuelve las dos tablas y una huella NUMERICA.
+-- La huella de antes concatenaba una cadena por fila ("id=pct/coste") y las
+-- pegaba todas: con muchas filas eso son cientos de KB de basura por lectura.
+-- Aqui se acumula un entero y se construye una sola cadena corta al final.
 local function LeerTabla()
-    local t, tc, trozos = {}, {}, {}
+    local t, tc = {}, {}
+    local n, suma = 0, 0
     -- Se piden las filas donde cambie ALGO: una fila puede dejar el dano
     -- intacto y tocar solo el mana, o al reves.
     local q = WorldDBQuery(
@@ -43,16 +59,28 @@ local function LeerTabla()
             if coste ~= 100 then
                 tc[id] = coste
             end
-            trozos[#trozos + 1] = id .. "=" .. pct .. "/" .. coste
+            n = n + 1
+            suma = (suma + id * 31 + pct * 7 + coste * 13) % 2147483647
         until not q:NextRow()
     end
-    return t, tc, table.concat(trozos, ",")
+    return t, tc, n .. ":" .. suma
+end
+
+----------------------------------------------------------------- envio
+
+-- Los bots de playerbots no tienen addon (ni cliente), pero el evento de
+-- login dispara igual con ellos. Sin este corte, cada bot que entra obliga a
+-- serializar y comprimir la tabla entera en AIO para tirarla a la basura.
+local function EsBot(player)
+    if type(player.IsBot) ~= "function" then return false end
+    local ok, res = pcall(player.IsBot, player)
+    return ok and res == true
 end
 
 local function Enviar(player)
-    if player then
-        AIO.Handle(player, "SpellReg", "Set", cache, cacheCoste)
-    end
+    if not player then return end
+    if EsBot(player) then return end
+    AIO.Handle(player, "SpellReg", "Set", cache, cacheCoste)
 end
 
 local function EnviarATodos()
@@ -68,26 +96,45 @@ function Handlers.Pedir(player)
     Enviar(player)
 end
 
--- Vigila la tabla. Asi se entera igual de un `.reload spell_regulator`
--- que de una edicion directa en la base de datos.
-local function Vigilar()
+----------------------------------------------------------------- recarga
+
+local function Recargar(avisar)
     local t, tc, f = LeerTabla()
-    if f ~= firma then
-        local primera = (firma == nil)
-        firma, cache, cacheCoste = f, t, tc
-        if not primera then
-            EnviarATodos()
-        end
+    if f == firma then return false end
+    firma, cache, cacheCoste = f, t, tc
+    if avisar then EnviarATodos() end
+    return true
+end
+
+-- `reload all locales` tambien empieza por "reload all", asi que "all" se
+-- acepta solo cuando no lleva nada detras.
+local function EsComandoDeRecarga(cmd)
+    cmd = string.gsub(string.lower(cmd or ""), "^%s+", "")
+    if string.find(cmd, "^reload%s+spell_regulator") then return true end
+    if string.find(cmd, "^reload%s+all%s+spell") then return true end
+    if string.find(cmd, "^reload%s+all%s*$") then return true end
+    return false
+end
+
+-- OJO: el evento 42 es un hook PREVIO, salta antes de que el core ejecute el
+-- comando. Leemos la tabla nosotros (no los mapas del C++), asi que el orden
+-- da igual, pero se espera un tick para no depender de eso.
+-- Devolver true NO bloquea el comando: CallAllFunctionsBool solo invierte el
+-- resultado si un handler devuelve false.
+local function AlComando(event, player, command, handler)
+    if EsComandoDeRecarga(command) then
+        CreateLuaEvent(function() Recargar(true) end, 100, 1)
     end
+    return true
 end
 
 local function AlEntrar(event, player)
     Enviar(player)
 end
 
-Vigilar()                                   -- carga inicial
-CreateLuaEvent(Vigilar, INTERVALO_MS, 0)    -- 0 = repetir siempre
-RegisterPlayerEvent(3, AlEntrar)            -- 3 = PLAYER_EVENT_ON_LOGIN
+Recargar(false)                             -- carga inicial
+RegisterPlayerEvent(42, AlComando)          -- 42 = PLAYER_EVENT_ON_COMMAND
+RegisterPlayerEvent(3, AlEntrar)            -- 3  = PLAYER_EVENT_ON_LOGIN
 
-print("[SpellRegulator] tooltip: servidor listo, vigilando `spellregulator` cada "
-      .. (INTERVALO_MS / 1000) .. " s")
+print("[SpellRegulator] tooltip: servidor listo. Se relee con "
+      .. ".reload spell_regulator (tambien .reload all spell / .reload all)")

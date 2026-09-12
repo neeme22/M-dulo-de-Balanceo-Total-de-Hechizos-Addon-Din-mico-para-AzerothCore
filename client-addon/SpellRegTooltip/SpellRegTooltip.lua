@@ -392,6 +392,13 @@ local function Retocar(tt, spellId)
         spellId = IdPorNombre(tt)
     end
     if not spellId then return end
+    -- Corte temprano. Si este hechizo no esta regulado, se sale sin recorrer
+    -- las lineas del tooltip. Con pocas filas en la tabla ese es el caso de
+    -- casi todos los tooltips, y SetAction se redibuja varias veces por
+    -- segundo, asi que este if es el que quita los tirones.
+    local pct  = PorcentajeDe(spellId)
+    local pctC = PorcentajeCosteDe(spellId)
+    if (not pct or pct == 100) and (not pctC or pctC == 100) then return end
     RetocarValor(tt, spellId)
     RetocarCoste(tt, spellId)
 end
@@ -420,6 +427,15 @@ local function Apuntar(gancho, arg, id, nota, linea)
     }
 end
 
+-- El diagnostico solo se apunta con /spellreg debug activado. Antes se
+-- recorrian todas las lineas del tooltip (LineaDescripcion) en cada gancho,
+-- estuviera el hechizo regulado o no.
+local function Diag(gancho, arg, id, nota, tt)
+    if not DEPURAR then return end
+    local _, linea = LineaDescripcion(tt)
+    Apuntar(gancho, arg, id, nota, linea)
+end
+
 SpellRegTooltipDB = SpellRegTooltipDB or {}
 SpellRegTooltipDB.log = {}
 SpellRegTooltipDB.api = {}
@@ -445,8 +461,7 @@ local function DesdeLibro(self, index, libro)
         local ok, link = pcall(GetSpellLink, index, libro)
         if ok then id, nota = IdDeLink(link), tostring(link) end
     end
-    local _, linea = LineaDescripcion(self)
-    Apuntar("libro", tostring(index) .. "/" .. tostring(libro), id, nota, linea)
+    Diag("libro", tostring(index) .. "/" .. tostring(libro), id, nota, self)
     Retocar(self, id)
 end
 
@@ -471,15 +486,13 @@ Enganchar("SetAction", function(self, slot)
             end
         end
     end
-    local _, linea = LineaDescripcion(self)
-    Apuntar("barra", slot, id, nota, linea)
+    Diag("barra", slot, id, nota, self)
     Retocar(self, id)
 end)
 
 Enganchar("SetHyperlink", function(self, link)
     local id = IdDeLink(link)
-    local _, linea = LineaDescripcion(self)
-    Apuntar("enlace", tostring(link), id, "", linea)
+    Diag("enlace", tostring(link), id, "", self)
     Retocar(self, id)
 end)
 
@@ -495,8 +508,7 @@ local function DesdeAura(metodo, filtroFijo)
                 if tonumber(a11) then id = tonumber(a11) end
             end
         end
-        local _, linea = LineaDescripcion(self)
-        Apuntar(metodo, tostring(unidad) .. "/" .. tostring(indice), id, nota, linea)
+        Diag(metodo, tostring(unidad) .. "/" .. tostring(indice), id, nota, self)
         Retocar(self, id)
     end
 end
@@ -522,8 +534,7 @@ Enganchar("SetShapeshift", function(self, indice)
             end
         end
     end
-    local _, linea = LineaDescripcion(self)
-    Apuntar("formas", indice, id, nota, linea)
+    Diag("formas", indice, id, nota, self)
     Retocar(self, id)
 end)
 
@@ -578,7 +589,7 @@ SlashCmdList["SPELLREG"] = function(txt)
     elseif cmd == "dump" then
         local L = SpellRegTooltipDB.log
         if not L or #L == 0 then
-            Msg("nada apuntado todavia: pasa el raton por un hechizo y repite")
+            Msg("nada apuntado. Haz /spellreg debug, pasa el raton por un hechizo y repite")
             return
         end
         -- resumen de los ultimos ganchos, para ver de un vistazo cuales saltan
